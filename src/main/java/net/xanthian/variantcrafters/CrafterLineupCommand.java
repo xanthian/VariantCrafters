@@ -43,7 +43,7 @@ final class CrafterLineupCommand {
         }
         var world = source.getWorld();
         var variants = CrafterVariants.variants();
-        var planks = CraftingTableInfo.findRecipePlanks(world, variants);
+        var planks = CraftingTableInfo.findSourcePlanks(world, variants);
 
         List<Column> columns = new ArrayList<>();
         columns.add(new Column(Blocks.CRAFTING_TABLE, Blocks.CRAFTER, Blocks.OAK_PLANKS));
@@ -75,7 +75,7 @@ final class CrafterLineupCommand {
         int count = placed;
         int missing = missingPlanks;
         source.sendFeedback(() -> Text.translatableWithFallback("commands.variantcrafters.lineup",
-                "Placed %s crafter displays. Skipped %s blocked columns. %s placed displays had no matching plank recipe.", count,
+                "Placed %s crafter displays. Skipped %s blocked columns. %s placed displays had no matching plank.", count,
                 columns.size() - count, missing), false);
         return placed;
     }

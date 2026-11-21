@@ -61,34 +61,30 @@ public final class CrafterVariants {
 
     private static void logLoadedSources(ServerWorld world) {
         var loaded = variants();
-        var recipePlanks = CraftingTableInfo.findRecipePlanks(world, loaded);
+        var sourcePlanks = CraftingTableInfo.findSourcePlanks(world, loaded);
         Map<String, Integer> counts = new TreeMap<>();
-        counts.put("minecraft", 1); // Oak uses the vanilla crafter.
+        counts.put("minecraft", 0); // Count only generated variants.
         int unidentified = 0;
         for (var variant : loaded) {
-            Identifier planks = CraftingTableInfo.sourcePlanks(variant.table());
-            if (planks == null) {
-                Block block = recipePlanks.get(Registries.ITEM.get(variant.tableItem()));
-                if (block == null) {
-                    unidentified++;
-                    continue;
-                }
-                planks = Registries.BLOCK.getId(block);
+            Block plank = sourcePlanks.get(Registries.ITEM.get(variant.tableItem()));
+            if (plank == null) {
+                unidentified++;
+            } else {
+                counts.merge(Registries.BLOCK.getId(plank).getNamespace(), 1, Integer::sum);
             }
-            counts.merge(planks.getNamespace(), 1, Integer::sum);
         }
 
         var loader = FabricLoader.getInstance();
         var summary = new StringJoiner(", ");
+        summary.add("vanilla (" + counts.remove("minecraft") + ")");
         counts.forEach((namespace, count) -> {
             String name = loader.getModContainer(namespace).map(mod -> mod.getMetadata().getName()).orElse(namespace);
-            summary.add(name + " (" + count + ")");
+            summary.add(name.replace('\r', ' ').replace('\n', ' ') + " (" + count + ")");
         });
         if (unidentified > 0) {
             summary.add("Unidentified wood source (" + unidentified + ")");
         }
-        summary.add("Total (" + (loaded.size() + 1) + ")");
-        LOGGER.info("Loaded crafters by wood source: {}", summary);
+        LOGGER.info("[Variant Crafters] loaded {} tables from {}", loaded.size(), summary);
     }
 
     private static void consider(Item item, Identifier ingredient) {

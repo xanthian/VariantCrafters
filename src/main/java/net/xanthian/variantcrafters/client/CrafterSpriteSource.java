@@ -130,7 +130,12 @@ public final class CrafterSpriteSource implements AtlasSource {
                 LOGGER.warn("Could not recolor crafter sprite {}. Using oak.", sprite, exception);
             }
         }
-        return opener.loadSprite(sprite, template.resource());
+        try {
+            return opener.loadSprite(sprite, template.resource());
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Could not load the fallback crafter sprite {}", sprite, exception);
+            return null;
+        }
     }
 
     private static BufferedImage readPlankFrame(Resource resource) throws IOException {

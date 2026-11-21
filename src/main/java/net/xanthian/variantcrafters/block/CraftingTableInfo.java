@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -39,28 +40,55 @@ public final class CraftingTableInfo {
         return null;
     }
 
-    public static Map<Item, Block> findRecipePlanks(ServerWorld world, Collection<CrafterVariants.Variant> variants) {
-        var tableItems = variants.stream().map(variant -> Registries.ITEM.get(variant.tableItem()))
-                .collect(Collectors.toSet());
+    public static Map<Item, Block> findSourcePlanks(ServerWorld world, Collection<CrafterVariants.Variant> variants) {
         Map<Item, Block> planks = new HashMap<>();
-        for (var entry : world.getRecipeManager().listAllOfType(RecipeType.CRAFTING)) {
-            Item table = entry.value().getResult(world.getRegistryManager()).getItem();
-            if (!tableItems.contains(table)) {
-                continue;
+        var unresolved = new HashSet<Item>();
+        for (var variant : variants) {
+            Item table = Registries.ITEM.get(variant.tableItem());
+            Identifier sourceId = sourcePlanks(variant.table());
+            Block source = sourceId == null ? null : Registries.BLOCK.getOrEmpty(sourceId).orElse(null);
+            if (source == null) {
+                unresolved.add(table);
+            } else {
+                planks.put(table, source);
             }
-            Block plank = entry.value().getIngredients().stream()
-                    .flatMap(ingredient -> Arrays.stream(ingredient.getMatchingStacks()))
-                    .filter(stack -> stack.getItem() instanceof BlockItem)
-                    .filter(stack -> stack.isIn(ItemTags.PLANKS)
-                            || Registries.ITEM.getId(stack.getItem()).getPath().endsWith("_planks"))
-                    .map(stack -> ((BlockItem) stack.getItem()).getBlock())
-                    .findFirst().orElse(null);
-            if (plank != null) {
-                if (entry.id().equals(Registries.ITEM.getId(table))) {
-                    planks.put(table, plank);
-                } else {
-                    planks.putIfAbsent(table, plank);
+        }
+        if (unresolved.isEmpty()) {
+            return planks;
+        }
+
+        var registries = world.getRegistryManager();
+        for (var entry : world.getRecipeManager().listAllOfType(RecipeType.CRAFTING)) {
+            try {
+                var recipe = entry.value();
+                Item table = recipe.getResult(registries).getItem();
+                if (!unresolved.contains(table)) {
+                    continue;
                 }
+                boolean exact = entry.id().equals(Registries.ITEM.getId(table));
+                if (!exact && planks.containsKey(table)) {
+                    continue;
+                }
+                Block source = recipe.getIngredients().stream()
+                        .flatMap(ingredient -> Arrays.stream(ingredient.getMatchingStacks()))
+                        .filter(stack -> {
+                            String path = Registries.ITEM.getId(stack.getItem()).getPath();
+                            return stack.getItem() instanceof BlockItem && (stack.isIn(ItemTags.PLANKS)
+                                    || path.endsWith("_planks") || path.endsWith("/planks") || path.equals("planks"));
+                        })
+                        .map(stack -> ((BlockItem) stack.getItem()).getBlock())
+                        .findFirst().orElse(null);
+                if (source != null) {
+                    planks.put(table, source);
+                    if (exact) {
+                        unresolved.remove(table);
+                        if (unresolved.isEmpty()) {
+                            break;
+                        }
+                    }
+                }
+            } catch (RuntimeException exception) {
+                LOGGER.debug("Could not inspect crafting recipe {}", entry.id(), exception);
             }
         }
         return planks;
