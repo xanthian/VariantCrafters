@@ -90,6 +90,10 @@ jar {
 	}
 }
 
+tasks.named('sourcesJar', Jar) {
+	from("LICENSE")
+}
+
 // configure the maven publication
 publishing {
 	publications {

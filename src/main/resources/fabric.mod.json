@@ -7,7 +7,7 @@
 	"authors": [
 		"Xanthian"
 	],
-	"license": ["CC0-1.0", "MIT"],
+	"license": "MIT",
 	"icon": "assets/variantcrafters/icon.png",
 	"environment": "*",
 	"mixins": ["variantcrafters.mixins.json"],
