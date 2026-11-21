@@ -46,8 +46,8 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
-	// Variant Crafting Tables 7.1 for Minecraft 1.21.1.
-	modLocalRuntime "curse.maven:variant-crafting-tables-fabric-575271:5664729"
+	// Install Variant Crafting Tables in Gradle development runs.
+	modLocalRuntime "curse.maven:variant-crafting-tables-fabric-575271:${project.variant_crafting_tables_file_id}"
 }
 
 processResources {
@@ -55,7 +55,8 @@ processResources {
 		version: project.version,
 		minecraft_version: project.minecraft_version,
 		loader_version: project.minimum_loader_version,
-		fabric_version: project.minimum_fabric_version
+		fabric_version: project.minimum_fabric_version,
+		variant_crafting_tables_version: project.minimum_variant_crafting_tables_version
 	]
 	inputs.properties properties
 

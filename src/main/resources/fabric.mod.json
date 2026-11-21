@@ -24,6 +24,6 @@
 		"minecraft": "${minecraft_version}",
 		"java": ">=21",
 		"fabric-api": ">=${fabric_version}",
-		"variantcraftingtables": ">=7.1"
+		"variantcraftingtables": ">=${variant_crafting_tables_version}"
 	}
 }
