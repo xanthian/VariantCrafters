@@ -5,6 +5,10 @@ build/
 out/
 classes/
 
+# local GameTests
+
+/src/test/
+
 # eclipse
 
 *.launch
