@@ -1,0 +1,29 @@
+{
+	"schemaVersion": 1,
+	"id": "variantcrafters",
+	"version": "${version}",
+	"name": "VariantCrafters",
+	"description": "Vanilla-style automatic crafters in different wood finishes.",
+	"authors": [
+		"Xanthian"
+	],
+	"license": ["CC0-1.0", "MIT"],
+	"icon": "assets/variantcrafters/icon.png",
+	"environment": "*",
+	"mixins": ["variantcrafters.mixins.json"],
+	"entrypoints": {
+		"main": [
+			"net.xanthian.variantcrafters.Initialise"
+		],
+		"client": [
+			"net.xanthian.variantcrafters.client.DynamicTexturesClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "${minecraft_version}",
+		"java": ">=21",
+		"fabric-api": ">=${fabric_version}",
+		"variantcraftingtables": ">=7.1"
+	}
+}

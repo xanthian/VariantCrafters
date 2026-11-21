@@ -1,0 +1,6 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": ["PP", "PP"],
+  "key": {"P": {"item": "variantcrafters_test:loose_planks"}},
+  "result": {"id": "variantcraftingtables:fixture_crafting_table"}
+}

@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "net.xanthian.variantcrafters.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "LifecycledResourceManagerImplMixin"
+  ],
+  "client": ["AtlasSourceManagerAccessor"],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
