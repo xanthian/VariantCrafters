@@ -1,85 +1,134 @@
 package net.xanthian.variantcrafters.resource;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import com.mojang.logging.LogUtils;
 import net.minecraft.util.Identifier;
-import net.xanthian.variantcrafters.Initialise;
+import net.minecraft.util.JsonHelper;
 
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.function.Function;
 
 final class CrafterModels {
+    private static final String VANILLA_CRAFTER = "minecraft:block/crafter";
+    private static final List<String> SIDES = List.of("north", "east", "south", "west");
+
     private CrafterModels() {
     }
 
-    static Map<Identifier, JsonObject> models(Identifier id, Function<String, String> faceTexture) {
-        JsonObject states = VanillaTemplates.STATES.deepCopy();
+    static Map<Identifier, JsonObject> models(Identifier id) {
+        Templates templates = VanillaTemplates.CONTENT;
         String path = id.getPath();
+        Identifier stateFile = id.withPath("blockstates/" + path + ".json");
+        Identifier itemFile = id.withPath("models/item/" + path + ".json");
+        if (templates == null) {
+            JsonObject variants = new JsonObject();
+            JsonObject state = new JsonObject();
+            state.addProperty("model", VANILLA_CRAFTER);
+            variants.add("", state);
+            JsonObject blockstate = new JsonObject();
+            blockstate.add("variants", variants);
+            return Map.of(stateFile, blockstate, itemFile, withParent(VANILLA_CRAFTER));
+        }
+
+        JsonObject states = templates.states().deepCopy();
         String blockModel = "block/" + path;
         for (var entry : states.getAsJsonObject("variants").entrySet()) {
             JsonObject state = entry.getValue().getAsJsonObject();
-            String model = state.get("model").getAsString();
-            String suffix = model.substring("minecraft:block/crafter".length());
-            if (suffix.equals("_crafting_triggered")) {
-                suffix = "_crafting";
+            String suffix = switch (state.get("model").getAsString()) {
+                case VANILLA_CRAFTER -> "";
+                case VANILLA_CRAFTER + "_triggered" -> "_triggered";
+                case VANILLA_CRAFTER + "_crafting", VANILLA_CRAFTER + "_crafting_triggered" -> "_crafting";
+                default -> null;
+            };
+            if (suffix != null) {
+                state.addProperty("model", id.withPath(blockModel + suffix).toString());
             }
-            state.addProperty("model", id.withPath(blockModel + suffix).toString());
         }
 
-        JsonObject item = new JsonObject();
-        item.addProperty("parent", id.withPath(blockModel).toString());
         Map<Identifier, JsonObject> files = new LinkedHashMap<>();
-        files.put(id.withPath("blockstates/" + path + ".json"), states);
-        files.put(id.withPath("models/" + blockModel + ".json"), model(VanillaTemplates.IDLE, faceTexture));
-        files.put(id.withPath("models/" + blockModel + "_triggered.json"), model(VanillaTemplates.TRIGGERED, faceTexture));
-        files.put(id.withPath("models/" + blockModel + "_crafting.json"), model(VanillaTemplates.CRAFTING, faceTexture));
-        files.put(id.withPath("models/item/" + path + ".json"), item);
+        files.put(stateFile, states);
+        files.put(id.withPath("models/" + blockModel + ".json"), model(id, templates.idle()));
+        files.put(id.withPath("models/" + blockModel + "_triggered.json"), model(id, templates.triggered()));
+        files.put(id.withPath("models/" + blockModel + "_crafting.json"), model(id, templates.crafting()));
+        files.put(itemFile, withParent(id.withPath(blockModel).toString()));
         return files;
     }
 
-    private static JsonObject model(JsonObject vanillaTextures, Function<String, String> faceTexture) {
+    private static JsonObject withParent(String parent) {
         JsonObject model = new JsonObject();
-        model.addProperty("parent", "minecraft:block/crafter");
+        model.addProperty("parent", parent);
+        return model;
+    }
+
+    private static JsonObject model(Identifier id, JsonObject vanillaTextures) {
+        JsonObject model = withParent(VANILLA_CRAFTER);
         JsonObject textures = new JsonObject();
-        for (String face : List.of("north", "east", "south", "west")) {
-            String texture = vanillaTextures.get(face).getAsString().replace("block/crafter_", "");
-            textures.addProperty(face, Initialise.MOD_ID + ":" + faceTexture.apply(texture));
+        String prefix = "block/crafter_";
+        for (String face : SIDES) {
+            Identifier texture = Identifier.tryParse(vanillaTextures.get(face).getAsString());
+            if (texture != null && texture.getPath().startsWith(prefix)) {
+                String name = texture.getPath().substring(prefix.length());
+                textures.addProperty(face, id.withPath(GeneratedCrafterPack.texturePath(id, name)).toString());
+            }
         }
-        textures.addProperty("bottom", "minecraft:" + vanillaTextures.get("bottom").getAsString());
-        textures.addProperty("top", "minecraft:" + vanillaTextures.get("top").getAsString());
+        textures.addProperty("bottom", vanillaTextures.get("bottom").getAsString());
+        textures.addProperty("top", vanillaTextures.get("top").getAsString());
         model.add("textures", textures);
         return model;
     }
 
-    private static JsonObject mergeTextures(JsonObject base, String model) {
+    private static JsonObject mergeTextures(JsonObject base, String model) throws IOException {
         JsonObject textures = base.deepCopy();
-        readVanilla("models/block/" + model + ".json").getAsJsonObject("textures").entrySet()
+        JsonHelper.getObject(readVanilla("models/block/" + model + ".json"), "textures").entrySet()
                 .forEach(entry -> textures.add(entry.getKey(), entry.getValue()));
         return textures;
     }
 
-    private static JsonObject readVanilla(String path) {
-        var resource = Objects.requireNonNull(CrafterModels.class.getResourceAsStream("/assets/minecraft/" + path), path);
-        try (var reader = new InputStreamReader(resource, StandardCharsets.UTF_8)) {
-            return JsonParser.parseReader(reader).getAsJsonObject();
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+    private static JsonObject readVanilla(String path) throws IOException {
+        var resource = CrafterModels.class.getResourceAsStream("/assets/minecraft/" + path);
+        if (resource == null) {
+            throw new IOException("Missing vanilla resource " + path);
         }
+        try (var reader = new InputStreamReader(resource, StandardCharsets.UTF_8)) {
+            return JsonHelper.asObject(JsonParser.parseReader(reader), path);
+        }
+    }
+
+    private static Templates loadTemplates() {
+        try {
+            JsonObject states = readVanilla("blockstates/crafter.json");
+            JsonObject variants = JsonHelper.getObject(states, "variants");
+            if (variants.isEmpty()) {
+                throw new JsonParseException("Vanilla crafter blockstate has no variants");
+            }
+            variants.asMap().forEach((key, value) -> JsonHelper.getString(JsonHelper.asObject(value, key), "model"));
+            JsonObject idle = JsonHelper.getObject(readVanilla("models/block/crafter.json"), "textures");
+            JsonObject triggered = mergeTextures(idle, "crafter_triggered");
+            JsonObject crafting = mergeTextures(triggered, "crafter_crafting");
+            for (JsonObject textures : List.of(idle, triggered, crafting)) {
+                SIDES.forEach(face -> JsonHelper.getString(textures, face));
+                JsonHelper.getString(textures, "top");
+                JsonHelper.getString(textures, "bottom");
+            }
+            return new Templates(states, idle, triggered, crafting);
+        } catch (IOException | JsonParseException exception) {
+            LogUtils.getLogger().warn("Could not load vanilla crafter model templates. Using the vanilla model.", exception);
+            return null;
+        }
+    }
+
+    private record Templates(JsonObject states, JsonObject idle, JsonObject triggered, JsonObject crafting) {
     }
 
     // The dedicated server only generates data, so load the client model templates on demand.
     private static final class VanillaTemplates {
-        private static final JsonObject STATES = readVanilla("blockstates/crafter.json");
-        private static final JsonObject IDLE = readVanilla("models/block/crafter.json").getAsJsonObject("textures");
-        private static final JsonObject TRIGGERED = mergeTextures(IDLE, "crafter_triggered");
-        private static final JsonObject CRAFTING = mergeTextures(TRIGGERED, "crafter_crafting");
+        private static final Templates CONTENT = loadTemplates();
     }
 
 }

@@ -4,7 +4,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.xanthian.variantcrafters.mixin.AtlasSourceManagerAccessor;
 import net.xanthian.variantcrafters.resource.GeneratedCrafterPack;
 
-public final class DynamicTexturesClient implements ClientModInitializer {
+public final class VariantCraftersClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         AtlasSourceManagerAccessor.variantcrafters$getSourceTypes()

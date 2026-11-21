@@ -1,50 +1,49 @@
 package net.xanthian.variantcrafters;
 
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.recipe.RecipeType;
 import net.minecraft.registry.Registries;
-import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
-import net.xanthian.variantcrafters.block.DynamicCrafters;
+import net.xanthian.variantcrafters.block.CrafterVariants;
+import net.xanthian.variantcrafters.block.CraftingTableInfo;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
-final class LineupCommand {
+final class CrafterLineupCommand {
+    private static final SimpleCommandExceptionType CREATIVE_REQUIRED = new SimpleCommandExceptionType(
+            Text.translatableWithFallback("commands.variantcrafters.lineup.creative_required",
+                    "Only players in Creative mode can place a crafter lineup."));
+
     private record Column(Block table, Block crafter, Block plank) {
     }
 
-    private LineupCommand() {
+    private CrafterLineupCommand() {
     }
 
     static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registries, environment) ->
-                dispatcher.register(CommandManager.literal(Initialise.MOD_ID)
+                dispatcher.register(CommandManager.literal(VariantCrafters.MOD_ID)
                         .requires(source -> source.hasPermissionLevel(2))
                         .then(CommandManager.literal("lineup").executes(context -> place(context.getSource())))));
     }
 
-    private static int place(ServerCommandSource source) {
+    private static int place(ServerCommandSource source) throws CommandSyntaxException {
+        if (!(source.getEntity() instanceof ServerPlayerEntity player) || !player.isCreative()) {
+            throw CREATIVE_REQUIRED.create();
+        }
         var world = source.getWorld();
-        var variants = DynamicCrafters.variants();
-        Set<Item> tableItems = new HashSet<>();
-        variants.forEach(variant -> tableItems.add(Registries.ITEM.get(variant.tableItem())));
-        var planks = findPlanks(world, tableItems);
+        var variants = CrafterVariants.variants();
+        var planks = CraftingTableInfo.findRecipePlanks(world, variants);
 
         List<Column> columns = new ArrayList<>();
         columns.add(new Column(Blocks.CRAFTING_TABLE, Blocks.CRAFTER, Blocks.OAK_PLANKS));
@@ -83,30 +82,5 @@ final class LineupCommand {
 
     private static boolean isClear(ServerWorld world, BlockPos pos) {
         return world.isInBuildLimit(pos) && world.getWorldBorder().contains(pos) && world.isAir(pos);
-    }
-
-    private static Map<Item, Block> findPlanks(ServerWorld world, Set<Item> tableItems) {
-        Map<Item, Block> planks = new HashMap<>();
-        for (var entry : world.getRecipeManager().listAllOfType(RecipeType.CRAFTING)) {
-            Item table = entry.value().getResult(world.getRegistryManager()).getItem();
-            if (!tableItems.contains(table)) {
-                continue;
-            }
-            Block plank = entry.value().getIngredients().stream()
-                    .flatMap(ingredient -> Arrays.stream(ingredient.getMatchingStacks()))
-                    .filter(stack -> stack.getItem() instanceof BlockItem)
-                    .filter(stack -> stack.isIn(ItemTags.PLANKS) || Registries.ITEM.getId(stack.getItem()).getPath().endsWith("_planks"))
-                    .map(ItemStack::getItem)
-                    .map(item -> ((BlockItem) item).getBlock())
-                    .findFirst().orElse(null);
-            if (plank != null) {
-                if (entry.id().equals(Registries.ITEM.getId(table))) {
-                    planks.put(table, plank);
-                } else {
-                    planks.putIfAbsent(table, plank);
-                }
-            }
-        }
-        return planks;
     }
 }

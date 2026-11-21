@@ -1,33 +1,37 @@
 package net.xanthian.variantcrafters.client;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
-import net.minecraft.util.Identifier;
+import com.google.gson.JsonPrimitive;
+import com.mojang.logging.LogUtils;
 import net.minecraft.resource.Resource;
-import net.minecraft.resource.ResourceManager;
+import net.minecraft.resource.ResourceFactory;
+import net.minecraft.util.Identifier;
+import org.slf4j.Logger;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.Reader;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Set;
 
 /** Resolves inherited JSON model textures. Adapted from Variant Crafting Tables under the MIT license. */
 final class TableTextureResolver {
+    private static final Logger LOGGER = LogUtils.getLogger();
+
     record WoodTexture(Identifier id, Resource resource) {
     }
 
     private TableTextureResolver() {
     }
 
-    static WoodTexture resolve(ResourceManager resources, Identifier table) throws IOException {
+    static WoodTexture resolve(ResourceFactory resources, Identifier table) throws IOException {
         return resolveModel(resources, table, "down", "bottom", "wood", "all", "side", "particle", "north", "top", "up");
     }
 
-    static WoodTexture resolvePlanks(ResourceManager resources, Identifier planks) throws IOException {
+    static WoodTexture resolvePlanks(ResourceFactory resources, Identifier planks) throws IOException {
         try {
             return resolveModel(resources, planks, "all", "side", "top", "particle", "north", "up");
         } catch (FileNotFoundException exception) {
@@ -37,68 +41,116 @@ final class TableTextureResolver {
         }
     }
 
-    private static WoodTexture resolveModel(ResourceManager resources, Identifier table, String... keys) throws IOException {
-        Identifier model = table.withPath("block/" + table.getPath());
-        var blockstate = resources.getResource(table.withPath("blockstates/" + table.getPath() + ".json"));
-        if (blockstate.isPresent()) {
-            try (Reader reader = blockstate.get().getReader()) {
-                JsonObject state = JsonParser.parseReader(reader).getAsJsonObject();
-                JsonElement apply = null;
-                if (state.has("variants") && !state.getAsJsonObject("variants").isEmpty()) {
-                    apply = state.getAsJsonObject("variants").entrySet().iterator().next().getValue();
-                } else if (state.has("multipart") && !state.getAsJsonArray("multipart").isEmpty()) {
-                    apply = state.getAsJsonArray("multipart").get(0).getAsJsonObject().get("apply");
-                }
-                if (apply != null) {
-                    if (apply.isJsonArray()) {
-                        apply = apply.getAsJsonArray().get(0);
-                    }
-                    model = Identifier.of(apply.getAsJsonObject().get("model").getAsString());
+    private static WoodTexture resolveModel(ResourceFactory resources, Identifier block, String... keys) throws IOException {
+        Identifier defaultModel = block.withPrefixedPath("block/");
+        JsonObject state = readObject(resources, block.withPrefixedPath("blockstates/").withSuffixedPath(".json"));
+        if (state != null) {
+            Identifier model = findModel(state);
+            if (model != null && !model.equals(defaultModel)) {
+                WoodTexture wood = findTexture(resources, model, keys);
+                if (wood != null) {
+                    return wood;
                 }
             }
         }
 
-        Map<String, String> textures = new LinkedHashMap<>();
-        collectTextures(resources, model, textures, new HashSet<>());
+        WoodTexture wood = findTexture(resources, defaultModel, keys);
+        if (wood == null) {
+            throw new FileNotFoundException("No wood texture for " + block);
+        }
+        return wood;
+    }
+
+    private static Identifier findModel(JsonObject state) {
+        if (state.get("variants") instanceof JsonObject variants) {
+            for (JsonElement variant : variants.asMap().values()) {
+                Identifier model = modelChoice(variant);
+                if (model != null) {
+                    return model;
+                }
+            }
+        }
+        if (state.get("multipart") instanceof JsonArray parts) {
+            for (JsonElement part : parts) {
+                if (part instanceof JsonObject object) {
+                    Identifier model = modelChoice(object.get("apply"));
+                    if (model != null) {
+                        return model;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Identifier modelChoice(JsonElement choice) {
+        if (choice instanceof JsonArray choices) {
+            for (JsonElement candidate : choices) {
+                Identifier model = modelId(candidate);
+                if (model != null) {
+                    return model;
+                }
+            }
+            return null;
+        }
+        return modelId(choice);
+    }
+
+    private static Identifier modelId(JsonElement choice) {
+        return choice instanceof JsonObject object ? identifier(object.get("model")) : null;
+    }
+
+    private static WoodTexture findTexture(ResourceFactory resources, Identifier model, String[] keys) {
+        var textures = new HashMap<String, String>();
+        var visitedModels = new HashSet<Identifier>();
+        while (model != null && visitedModels.size() < 32 && visitedModels.add(model)) {
+            JsonObject json = readObject(resources, model.withPrefixedPath("models/").withSuffixedPath(".json"));
+            if (json == null) {
+                break;
+            }
+            if (json.get("textures") instanceof JsonObject modelTextures) {
+                modelTextures.asMap().forEach((key, value) -> {
+                    if (value instanceof JsonPrimitive primitive && primitive.isString()) {
+                        textures.putIfAbsent(key, primitive.getAsString());
+                    }
+                });
+            }
+            model = identifier(json.get("parent"));
+        }
+
         for (String key : keys) {
             String value = textures.get(key);
-            Set<String> visited = new HashSet<>();
-            while (value != null && value.startsWith("#") && visited.add(value)) {
+            var visitedAliases = new HashSet<String>();
+            while (value != null && value.startsWith("#") && visitedAliases.add(value)) {
                 value = textures.get(value.substring(1));
             }
-            if (value != null && !value.startsWith("#")) {
-                Identifier texture = Identifier.of(value);
-                var resource = resources.getResource(texture.withPath("textures/" + texture.getPath() + ".png"));
+            Identifier texture = value == null ? null : Identifier.tryParse(value);
+            if (texture != null) {
+                var resource = resources.getResource(texture.withPrefixedPath("textures/").withSuffixedPath(".png"));
                 if (resource.isPresent()) {
                     return new WoodTexture(texture, resource.get());
                 }
             }
         }
-        throw new FileNotFoundException("No wood texture in model " + model);
+        return null;
     }
 
-    private static void collectTextures(ResourceManager resources, Identifier model, Map<String, String> textures,
-                                        Set<Identifier> visited) throws IOException {
-        if (visited.size() >= 32 || !visited.add(model)) {
-            return;
-        }
-        var resource = resources.getResource(model.withPath("models/" + model.getPath() + ".json"));
+    private static JsonObject readObject(ResourceFactory resources, Identifier id) {
+        var resource = resources.getResource(id);
         if (resource.isEmpty()) {
-            return;
+            return null;
         }
-        try (Reader reader = resource.get().getReader()) {
-            JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
-            if (json.has("parent")) {
-                collectTextures(resources, Identifier.of(json.get("parent").getAsString()), textures, visited);
-            }
-            if (json.has("textures")) {
-                json.getAsJsonObject("textures").entrySet().forEach(entry -> {
-                    if (entry.getValue().isJsonPrimitive()) {
-                        textures.put(entry.getKey(), entry.getValue().getAsString());
-                    }
-                });
-            }
+        try (var reader = resource.get().getReader()) {
+            return JsonParser.parseReader(reader) instanceof JsonObject json ? json : null;
+        } catch (IOException | JsonParseException exception) {
+            LOGGER.warn("Ignoring unreadable model resource {}", id, exception);
+            return null;
         }
+    }
+
+    private static Identifier identifier(JsonElement element) {
+        return element instanceof JsonPrimitive value && value.isString()
+                ? Identifier.tryParse(value.getAsString()) : null;
     }
 }
 

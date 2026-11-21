@@ -1,7 +1,10 @@
 package net.xanthian.variantcrafters.block;
 
+import com.mojang.logging.LogUtils;
 import net.fabricmc.fabric.api.event.registry.RegistryEntryAddedCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.object.builder.v1.block.entity.FabricBlockEntityType;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.Block;
 import net.minecraft.block.Blocks;
@@ -12,27 +15,31 @@ import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
-import net.xanthian.variantcrafters.Initialise;
+import net.xanthian.variantcrafters.VariantCrafters;
+import org.slf4j.Logger;
 
 import java.util.Collection;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.StringJoiner;
 import java.util.TreeMap;
 
-public final class DynamicCrafters {
+public final class CrafterVariants {
     public static final String TABLES_MOD_ID = "variantcraftingtables";
+    private static final Logger LOGGER = LogUtils.getLogger();
     public record Variant(Identifier id, Identifier table, Identifier tableItem, CrafterBlock block) {
         public String displayName() {
-            return TableNames.woodLabel(table, Registries.BLOCK.get(table).getTranslationKey()) + " Crafter";
+            return CraftingTableInfo.woodLabel(table, Registries.BLOCK.get(table).getTranslationKey()) + " Crafter";
         }
     }
 
     private static final Map<Block, Identifier> pending = new IdentityHashMap<>();
     private static final Map<Identifier, Variant> variants = new TreeMap<>();
 
-    private DynamicCrafters() {
+    private CrafterVariants() {
     }
 
     public static Collection<Variant> variants() {
@@ -49,6 +56,39 @@ public final class DynamicCrafters {
         RegistryEntryAddedCallback.event(Registries.ITEM).register((rawId, id, item) -> consider(item, id));
         // Snapshot existing items because discovery can register new items during iteration.
         Registries.ITEM.stream().toList().forEach(item -> consider(item, Registries.ITEM.getId(item)));
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> logLoadedSources(server.getOverworld()));
+    }
+
+    private static void logLoadedSources(ServerWorld world) {
+        var loaded = variants();
+        var recipePlanks = CraftingTableInfo.findRecipePlanks(world, loaded);
+        Map<String, Integer> counts = new TreeMap<>();
+        counts.put("minecraft", 1); // Oak uses the vanilla crafter.
+        int unidentified = 0;
+        for (var variant : loaded) {
+            Identifier planks = CraftingTableInfo.sourcePlanks(variant.table());
+            if (planks == null) {
+                Block block = recipePlanks.get(Registries.ITEM.get(variant.tableItem()));
+                if (block == null) {
+                    unidentified++;
+                    continue;
+                }
+                planks = Registries.BLOCK.getId(block);
+            }
+            counts.merge(planks.getNamespace(), 1, Integer::sum);
+        }
+
+        var loader = FabricLoader.getInstance();
+        var summary = new StringJoiner(", ");
+        counts.forEach((namespace, count) -> {
+            String name = loader.getModContainer(namespace).map(mod -> mod.getMetadata().getName()).orElse(namespace);
+            summary.add(name + " (" + count + ")");
+        });
+        if (unidentified > 0) {
+            summary.add("Unidentified wood source (" + unidentified + ")");
+        }
+        summary.add("Total (" + (loaded.size() + 1) + ")");
+        LOGGER.info("Loaded crafters by wood source: {}", summary);
     }
 
     private static void consider(Item item, Identifier ingredient) {
@@ -74,7 +114,7 @@ public final class DynamicCrafters {
         String crafterPath = path.endsWith(suffix)
                 ? path.substring(0, path.length() - suffix.length()) + "_crafter"
                 : path + "/crafter";
-        Identifier id = Identifier.of(Initialise.MOD_ID, crafterPath);
+        Identifier id = Identifier.of(VariantCrafters.MOD_ID, crafterPath);
         if (Registries.BLOCK.containsId(id) || Registries.ITEM.containsId(id)) {
             return;
         }

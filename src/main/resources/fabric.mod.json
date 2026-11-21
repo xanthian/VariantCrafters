@@ -13,10 +13,10 @@
 	"mixins": ["variantcrafters.mixins.json"],
 	"entrypoints": {
 		"main": [
-			"net.xanthian.variantcrafters.Initialise"
+			"net.xanthian.variantcrafters.VariantCrafters"
 		],
 		"client": [
-			"net.xanthian.variantcrafters.client.DynamicTexturesClient"
+			"net.xanthian.variantcrafters.client.VariantCraftersClient"
 		]
 	},
 	"depends": {

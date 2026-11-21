@@ -4,29 +4,66 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.block.Block;
+import net.minecraft.item.BlockItem;
+import net.minecraft.item.Item;
+import net.minecraft.recipe.RecipeType;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.tag.ItemTags;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.util.Identifier;
+import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-public final class TableNames {
+public final class CraftingTableInfo {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final String SUFFIX = " Crafting Table";
     private static final Map<String, String> ENGLISH_NAMES = load();
 
-    private TableNames() {
+    private CraftingTableInfo() {
     }
 
     public static Identifier sourcePlanks(Identifier table) {
-        Object shared = FabricLoader.getInstance().getObjectShare().get(DynamicCrafters.TABLES_MOD_ID + ":source_planks");
+        Object shared = FabricLoader.getInstance().getObjectShare().get(CrafterVariants.TABLES_MOD_ID + ":source_planks");
         if (shared instanceof Map<?, ?> sources && sources.get(table) instanceof Identifier planks) {
             return planks;
         }
         return null;
+    }
+
+    public static Map<Item, Block> findRecipePlanks(ServerWorld world, Collection<CrafterVariants.Variant> variants) {
+        var tableItems = variants.stream().map(variant -> Registries.ITEM.get(variant.tableItem()))
+                .collect(Collectors.toSet());
+        Map<Item, Block> planks = new HashMap<>();
+        for (var entry : world.getRecipeManager().listAllOfType(RecipeType.CRAFTING)) {
+            Item table = entry.value().getResult(world.getRegistryManager()).getItem();
+            if (!tableItems.contains(table)) {
+                continue;
+            }
+            Block plank = entry.value().getIngredients().stream()
+                    .flatMap(ingredient -> Arrays.stream(ingredient.getMatchingStacks()))
+                    .filter(stack -> stack.getItem() instanceof BlockItem)
+                    .filter(stack -> stack.isIn(ItemTags.PLANKS)
+                            || Registries.ITEM.getId(stack.getItem()).getPath().endsWith("_planks"))
+                    .map(stack -> ((BlockItem) stack.getItem()).getBlock())
+                    .findFirst().orElse(null);
+            if (plank != null) {
+                if (entry.id().equals(Registries.ITEM.getId(table))) {
+                    planks.put(table, plank);
+                } else {
+                    planks.putIfAbsent(table, plank);
+                }
+            }
+        }
+        return planks;
     }
 
     static String woodLabel(Identifier table, String translationKey) {
@@ -58,7 +95,7 @@ public final class TableNames {
     }
 
     private static Map<String, String> load() {
-        String mod = DynamicCrafters.TABLES_MOD_ID;
+        String mod = CrafterVariants.TABLES_MOD_ID;
         var path = FabricLoader.getInstance().getModContainer(mod)
                 .flatMap(container -> container.findPath("assets/" + mod + "/lang/en_us.json"));
         if (path.isEmpty()) {
@@ -82,7 +119,7 @@ public final class TableNames {
                 }
             });
         } catch (IOException | JsonParseException | IllegalStateException exception) {
-            LogUtils.getLogger().warn("Could not read Variant Crafting Tables display names", exception);
+            LOGGER.warn("Could not read Variant Crafting Tables display names", exception);
             return Map.of();
         }
 

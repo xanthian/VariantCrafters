@@ -9,8 +9,8 @@ import net.minecraft.resource.ResourceType;
 import net.minecraft.resource.metadata.ResourceMetadataReader;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
-import net.xanthian.variantcrafters.Initialise;
-import net.xanthian.variantcrafters.block.DynamicCrafters.Variant;
+import net.xanthian.variantcrafters.VariantCrafters;
+import net.xanthian.variantcrafters.block.CrafterVariants.Variant;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -25,8 +25,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public final class GeneratedCrafterPack implements ResourcePack {
-    public static final Identifier ATLAS_SOURCE_ID = Identifier.of(Initialise.MOD_ID, "crafter_variants");
-    public static final Identifier SOURCE_MOD_FONT_ID = Identifier.of(Initialise.MOD_ID, "source_mod");
+    public static final Identifier ATLAS_SOURCE_ID = Identifier.of(VariantCrafters.MOD_ID, "crafter_variants");
+    public static final Identifier SOURCE_MOD_FONT_ID = Identifier.of(VariantCrafters.MOD_ID, "source_mod");
     private static final Gson GSON = new Gson();
     private static final ResourcePackInfo INFO = new ResourcePackInfo("variantcrafters_generated",
             Text.literal("Generated Variant Crafters"), ResourcePackSource.BUILTIN, Optional.empty());
@@ -41,10 +41,10 @@ public final class GeneratedCrafterPack implements ResourcePack {
             Map<String, String> translations = new LinkedHashMap<>();
             translations.put("tag.item.variantcrafters.crafter_variants", "Crafter Variants");
             for (var variant : variants) {
-                CrafterModels.models(variant.id(), face -> texturePath(variant.id(), face)).forEach(this::put);
+                CrafterModels.models(variant.id()).forEach(this::put);
                 translations.put(variant.block().getTranslationKey(), variant.displayName());
             }
-            put(Identifier.of(Initialise.MOD_ID, "lang/en_us.json"), translations);
+            put(Identifier.of(VariantCrafters.MOD_ID, "lang/en_us.json"), translations);
             put(Identifier.ofVanilla("lang/en_us.json"), Map.of("block.minecraft.crafter", "Oak Crafter"));
             put(Identifier.ofVanilla("atlases/blocks.json"), Map.of("sources", List.of(Map.of("type", ATLAS_SOURCE_ID.toString()))));
             putSourceModFont();
@@ -54,10 +54,10 @@ public final class GeneratedCrafterPack implements ResourcePack {
             var tag = Map.of("replace", false, "values", values);
             put(Identifier.ofVanilla("tags/block/mineable/pickaxe.json"), tag);
             put(Identifier.ofVanilla("tags/block/needs_stone_tool.json"), tag);
-            Identifier variantsTag = Identifier.of(Initialise.MOD_ID, "crafter_variants");
+            Identifier variantsTag = Identifier.of(VariantCrafters.MOD_ID, "crafter_variants");
             put(file(variantsTag, "tags/item/"), tag);
 
-            Identifier conversion = Identifier.of(Initialise.MOD_ID, "oak_crafter_from_variant");
+            Identifier conversion = Identifier.of(VariantCrafters.MOD_ID, "oak_crafter_from_variant");
             put(file(conversion, "recipe/"), Map.of(
                     "type", "minecraft:crafting_shapeless", "category", "redstone",
                     "ingredients", List.of(Map.of("tag", variantsTag.toString())),
@@ -95,7 +95,7 @@ public final class GeneratedCrafterPack implements ResourcePack {
         String item = id.toString();
         String table = variant.tableItem().toString();
         put(file(id, "recipe/"), Map.of(
-                "type", "minecraft:crafting_shaped", "category", "redstone", "group", Initialise.MOD_ID,
+                "type", "minecraft:crafting_shaped", "category", "redstone", "group", VariantCrafters.MOD_ID,
                 "pattern", List.of("III", "ITI", "RDR"),
                 "key", Map.of("I", Map.of("item", "minecraft:iron_ingot"),
                         "T", Map.of("item", table),
